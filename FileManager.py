@@ -7,18 +7,18 @@ class FileManager():
     def __init__(self, root):
         self.root = root
         os.makedirs(root, exist_ok=True)
+        self.set_filepath(filepath='')
     
     def set_filepath(self, filepath):
         self.filepath = os.path.join(self.root, filepath)
         os.makedirs(self.filepath, exist_ok=True)
     
-    def get_filename(self, fn, filepath=''):
-        self.set_filepath(filepath)
+    def get_filename(self, fn):
         fn = os.path.join(self.filepath, fn)
         return fn
 
-    def save(self, obj, fn, filepath=''):
-        fn = self.get_filename(fn, filepath)
+    def save(self, obj, fn):
+        fn = self.get_filename(fn)
         if fn.endswith('.npy'):
             assert isinstance(obj, np.ndarray)
             np.save(fn, obj)
@@ -26,8 +26,8 @@ class FileManager():
         with open(fn, 'wb') as handle:
             pickle.dump(obj, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def load(self, fn, filepath=''):
-        fn = self.get_filename(fn, filepath)
+    def load(self, fn):
+        fn = self.get_filename(fn)
         if not os.path.isfile(fn):
             return None
         if fn.endswith('.npy'):

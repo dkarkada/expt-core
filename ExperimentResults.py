@@ -4,8 +4,7 @@ import pickle
 
 class ExperimentResults():
 
-    def __init__(self, axes, filename, metadata=None):
-        self.filename = filename
+    def __init__(self, axes, metadata=None):
         self.metadata = metadata
         self.axes = axes.copy()
         shape = [len(axis) for (_, axis) in axes]
@@ -50,7 +49,7 @@ class ExperimentResults():
         print(f"Axis '{axis_name}' not found.")
         return False
 
-    def write(self, write_vals, save_after=True, **kwargs):
+    def write(self, write_vals, **kwargs):
         idxs = self._to_idxs(**kwargs)
         idxs = tuple([slc if slc.start is None else slc.start for slc in idxs])
         hole_shape, fill_shape = np.shape(self.results[idxs]), np.shape(write_vals)
@@ -59,19 +58,10 @@ class ExperimentResults():
             return
         self.results[idxs] = write_vals
         self.written[idxs] = True
-        if save_after:
-            self.save()
 
     def print_axes(self):
         for (ax_name, axis) in self.axes:
             print(f"{ax_name}: {axis}")
 
-    def save(self):
-        with open(self.filename, 'wb') as handle:
-            pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    def load(filename):
-        with open(filename, 'rb') as handle:
-            return pickle.load(handle)
 
         
