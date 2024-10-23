@@ -10,7 +10,7 @@ def rcsetup():
 
 class Logger:
 
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         self.filename = filename        
         if filename:
             with open(filename, 'w') as _:
