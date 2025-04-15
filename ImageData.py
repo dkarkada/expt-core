@@ -3,10 +3,11 @@ import torch.nn.functional as F
 import torchvision
 
 import numpy as np
+from einops import rearrange
 
 class ImageData():
     """
-    Get mid-scale image datasets as numpy arrays.
+    Get image datasets as numpy arrays.
     """
 
     dataset_dict = {
@@ -19,7 +20,7 @@ class ImageData():
         'imagenet64': None,
     }
 
-    def __init__(self, dataset_name, data_dir, classes=None, onehot=True, format='NCHW'):
+    def __init__(self, dataset_name, data_dir, classes=None, onehot=True):
         """
         dataset_name (str): one of  'mnist', 'fmnist', 'cifar10', 'cifar100', 'imagenet32', 'imagenet64'
         dataset_dir (str): the directory where the raw dataset is saved
@@ -29,6 +30,8 @@ class ImageData():
         onehot (boolean): whether to use one-hot label encodings (typical for MSE loss). Default: True
         format (str): specify order of (sample, channel, height, width) dims. 'NCHW' default, or 'NHWC.'
             torchvision.dataset('cifar10') uses latter, needs ToTensor transform to reshape; former is ready-to-use.
+
+        returns: numpy ndarray with shape (b, c, h, w)
         """
 
         assert dataset_name in self.dataset_dict
@@ -37,28 +40,21 @@ class ImageData():
         def format_data(dataset):
             if self.name in ['cifar10','cifar100']:
                 X, y = dataset.data, dataset.targets
-                X = X.transpose(0, 3, 1, 2)
+                X = rearrange(X, 'b h w c -> b c h w')
+                y = np.array(y)
             if self.name in ['mnist', 'fmnist']:
                 X, y = dataset.data.numpy(), dataset.targets.numpy()
-                X = X[:, None, :,:]
+                X = rearrange(X, 'b h w -> b 1 h w')
             if self.name in ['svhn']:
                 X, y = dataset.data, dataset.labels
             if self.name in ['imagenet32', 'imagenet64']:
                 X, y = dataset['data'], dataset['labels']
-                X = X.reshape(-1, 3, 32, 32)
+                X = rearrange(X, 'b d -> b c h w', c=3, h=32, w=32)
                 y -= 1
-            assert format in ['NHWC', 'NCHW']
-            if format == 'NHWC':
-                X = X.transpose(0, 2, 3, 1)
-
-            # make elements of input O(1)
-            X = X/255.0
-
-            n_classes = int(max(y)) + 1
 
             if classes is not None:
                 # convert old class labels to new
-                converter = -1 * np.ones(n_classes)
+                converter = -1 * np.ones(int(max(y)) + 1)
                 for new_class, group in enumerate(classes):
                     group = [group] if type(group) == int else group
                     for old_class in group:
@@ -67,11 +63,11 @@ class ImageData():
                 mask = (converter[y] >= 0)
                 X = X[mask]
                 y = converter[y][mask]
-                # update n_classes
-                n_classes = int(max(y)) + 1
 
-            if onehot:
-                y = F.one_hot(torch.Tensor(y).long()).numpy()
+            # make elements of input O(1)
+            X = X/255.0
+            # shape labels (N, nclasses)
+            y = F.one_hot(torch.Tensor(y).long()).numpy() if onehot else y[:, None]
 
             return X.astype(np.float32), y.astype(np.float32)
 
