@@ -36,7 +36,7 @@ class ExptTrace():
                 key_idx_extent = self.get_axis(var_name)
             key_axes.append(key_idx_extent)
         shape = [len(key_idx_extent) for key_idx_extent in key_axes]
-        if np.prod(shape) == 1:
+        if np.prod(shape) == 1 and len(self.vals) > 1:
             assert key in self.vals, f"key {key} not found"
             return self.vals[key]
         vals = np.zeros(shape + list(self.valshape))
