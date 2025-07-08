@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torchvision
 
 import numpy as np
-from einops import rearrange
+from einops import rearrange, reduce
 
 class ImageData():
     """
@@ -106,3 +106,44 @@ class ImageData():
         X, y = full_X[idxs].copy(), full_y[idxs].copy()
         assert len(X) == n
         return X, y
+
+
+def preprocess(X, **kwargs):
+    """
+    Process image dataset. Returns vectorized (flattened) images.
+    
+    X (ndarray): image dataset, shape (N, c, h, w)
+    kwargs:
+        "grayscale" (bool, False): If true, average over channels. Eliminates channel dim.
+        "center" (bool, False): If true, center image vector distribution.
+        "normalize" (bool, False): If true, make all image vectors unit norm.
+        "zca_strength" (float, 0): Flatten covariance spectrum according to S_new = S / sqrt(zca_strength * S^2 + 1)
+
+    returns: ndarray with shape (N, d)
+    """
+
+    if kwargs.get('grayscale', False):
+        X = reduce(X, 'N 3 h w -> N (h w)', 'mean')
+    else:
+        X = rearrange(X, 'N c h w -> N (c h w)')
+
+    if kwargs.get('center', False):
+        X_mean = reduce(X, 'N d -> d', 'mean')
+        X -= X_mean
+
+    if kwargs.get('normalize', False):
+        X /= np.linalg.norm(X, axis=1, keepdims=True)
+
+    zca_strength = kwargs.get('zca_strength', 0)
+    if zca_strength:
+        U, S, Vt = np.linalg.svd(X, full_matrices=False)
+        zca_strength /= np.mean(S**2)
+        Sp = S / np.sqrt(zca_strength * S**2 + 1)
+        Sp /= np.linalg.norm(Sp)
+        X = U @ np.diag(Sp) @ Vt
+
+    if kwargs.get('center', False):
+        X_mean = reduce(X, 'N d -> d', 'mean')
+        X -= X_mean
+
+    return X
