@@ -1,6 +1,5 @@
 import numpy as np
 import itertools
-from typing import Comparable
 
 class ExptTrace():
 
@@ -28,9 +27,6 @@ class ExptTrace():
         key = (key,) if not isinstance(key, tuple) else key
         if len(key) != len(self.var_names):
             raise ValueError(f"num keys {len(key)} != num vars {len(self.var_names)}")
-        for k in key:
-            if not isinstance(k, Comparable):
-                raise ValueError(f"key element {k} must support ordering operations")
 
         if key in self.vals:
             raise ValueError(f"key {key} already exists. overwriting not supported")
