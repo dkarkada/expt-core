@@ -1,5 +1,5 @@
 import numpy as np
-import itertools
+
 
 class ExptTrace():
 
@@ -10,115 +10,128 @@ class ExptTrace():
     def __init__(self, var_names):
         if not isinstance(var_names, list):
             raise ValueError("var_names must be a list")
-        if "val" in var_names:
-            raise ValueError("variable name 'val' disallowed")
+        if "outcome" in var_names:
+            raise ValueError("variable name 'outcome' disallowed")
         self.var_names = var_names.copy()
-        self.vals = {}
-        self.valshape = None
+        self._config2outcome = {}
+        self.outcome_shape = None
 
     def __setitem__(self, key, val):
-        if self.valshape is None:
-            val_array = np.asarray(val)
-            if not np.issubdtype(val_array.dtype, np.number):
-                raise ValueError("value must be numeric")
-            self.valshape = val_array.shape
-        if np.shape(val) != self.valshape:
-            raise ValueError(f"value shape {np.shape(val)} != expected {self.valshape}")
-        key = (key,) if not isinstance(key, tuple) else key
-        if len(key) != len(self.var_names):
-            raise ValueError(f"num keys {len(key)} != num vars {len(self.var_names)}")
-
-        if key in self.vals:
-            raise ValueError(f"key {key} already exists. overwriting not supported")
-        self.vals[key] = val
+        config, outcome = key, val
+        # if this is the first measurement, figure out shape of measurement outcome
+        if self.outcome_shape is None:
+            out_array = np.asarray(outcome)
+            if not np.issubdtype(out_array.dtype, np.number):
+                raise ValueError("measurement outcome must be numeric")
+            self.outcome_shape = out_array.shape
+        # otherwise, ensure new measurement has compatible shape
+        elif np.shape(outcome) != self.outcome_shape:
+            raise ValueError(f"outcome shape {np.shape(outcome)} != expected {self.outcome_shape}")
+        # ensure config is a tuple of the correct length
+        config = (config,) if not isinstance(config, tuple) else config
+        if len(config) != len(self.var_names):
+            raise ValueError(f"len config {len(config)} != num vars {len(self.var_names)}")
+        # ensure config settings are of valid types
+        allowed_types = (int, float, str, tuple)
+        if not all(isinstance(c, allowed_types) for c in config):
+            raise ValueError(f"config {config} elements must be one of {allowed_types}")
+        # ensure config doesn't already exist, then write measurement outcome
+        if config in self._config2outcome:
+            raise ValueError(f"config {config} already exists. overwriting not supported")
+        self._config2outcome[config] = outcome
 
     def __getitem__(self, key):
-        if self.valshape is None:
+        # we need to know shape of measurement outcome
+        if self.outcome_shape is None:
             raise RuntimeError("must add items before getting")
-        key = (key,) if not isinstance(key, tuple) else key
-        if len(key) != len(self.var_names):
-            raise ValueError(f"num keys {len(key)} != num vars {len(self.var_names)}")
+        # key = tuple of indexers (ints or slices). Selects configs.
+        # ensure key is a tuple of the correct length
+        var_indexers = (key,) if not isinstance(key, tuple) else key
+        if len(var_indexers) != len(self.var_names):
+            raise ValueError(f"num config vars {len(var_indexers)} != expected {len(self.var_names)}")
 
-        key_axes = []
+        # for each indep var, get the var value selected by the key.
+        # if the indexer is a (full) slice, get the full axis for that var
+        config_axes = []
         for idx, var_name in enumerate(self.var_names):
-            key_i = key[idx]
-            key_idx_extent = [key_i]
-            if isinstance(key_i, slice):
-                slice_is_full = all([x==None for x in [key_i.start, key_i.stop, key_i.step]])
-                if not slice_is_full:
+            var_setting = var_indexers[idx]
+            config_axis = [var_setting]
+            if isinstance(var_setting, slice):
+                slc = (var_setting.start, var_setting.stop, var_setting.step)
+                if not all([x is None for x in slc]):
                     raise ValueError(f"slice start/stop/step not supported ({var_name})")
-                key_idx_extent = self.get_axis(var_name)
-            key_axes.append(key_idx_extent)
-        shape = [len(key_idx_extent) for key_idx_extent in key_axes]
+                config_axis = self.get_axis(var_name)
+            config_axes.append(config_axis)
 
-        if np.prod(shape) == 1 and len(self.vals) > 1:
-            if key not in self.vals:
-                raise KeyError(f"key {key} not found")
-            return self.vals[key]
-        vals = np.ma.masked_all(shape + list(self.valshape))
+        # create a meshgrid of all selected configs, populate with outcomes.
+        # use masked array to handle missing/unwritten outcomes.
+        config_shape = [len(ax) for ax in config_axes]
+        result_mesh = np.ma.masked_all(config_shape + list(self.outcome_shape))
+        for mesh_idxs in np.ndindex(*config_shape):
+            config = tuple(config_axes[dim][idx] for dim, idx in enumerate(mesh_idxs))
+            if config in self._config2outcome.keys():
+                result_mesh[mesh_idxs] = self._config2outcome[config]
 
-        idx_maps = []
-        for axis in key_axes:
-            idx_maps.append({val: i for i, val in enumerate(axis)})
-        for key in itertools.product(*key_axes):
-            shape_idxs = tuple(idx_maps[dim][val] for dim, val in enumerate(key))
-            if key in self.vals:
-                vals[shape_idxs] = self.vals[key]
-
-        if not np.ma.is_masked(vals):
-            return np.array(vals)
-        return vals
+        # if all results are missing, raise KeyError.
+        # if the key selects a single measurement, return a squeezed array.
+        # if there are no missing results, return a regular ndarray.
+        if np.all(result_mesh.mask):
+            raise KeyError(f"config(s) {var_indexers} is/are missing")
+        if np.prod(config_shape) == 1:
+            return np.array(result_mesh).squeeze()
+        if not np.ma.is_masked(result_mesh):
+            return np.array(result_mesh)
+        return result_mesh
 
     def get_axis(self, var_name):
         if var_name not in self.var_names:
             raise ValueError(f"var {var_name} not found")
-        idx = self.var_names.index(var_name)
-        key_idx_extent = set()
-        for keys in self.vals.keys():
-            key_idx_extent.add(keys[idx])
-        return sorted(list(key_idx_extent))
+        var_idx = self.var_names.index(var_name)
+        # iterate through written configs and collect all var settings
+        axis = set()
+        for config in self._config2outcome.keys():
+            axis.add(config[var_idx])
+        return sorted(list(axis))
 
     def get(self, **kwargs):
-        key = self._get_key(_mode='get', **kwargs)
+        key = self._get_config_key(_mode='get', **kwargs)
         return self[key]
 
     def set(self, **kwargs):
-        if "val" not in kwargs:
-            raise ValueError(f"no val given")
-        val = kwargs["val"]
-        key = self._get_key(_mode='set', **kwargs)
-        self[key] = val
+        if "outcome" not in kwargs:
+            raise ValueError(f"no outcome given")
+        outcome = kwargs["outcome"]
+        config = self._get_config_key(_mode='set', **kwargs)
+        self[config] = outcome
 
     def is_written(self, **kwargs):
-        key = self._get_key(_mode='set', **kwargs)
-        return key in self.vals
+        config = self._get_config_key(_mode='set', **kwargs)
+        return config in self._config2outcome.keys()
 
-    def _get_key(self, _mode='set', **kwargs):
+    def _get_config_key(self, _mode='set', **kwargs):
+        key = []
         for var_name in self.var_names:
-            if _mode == 'set':
-                if var_name not in kwargs:
+            var_indexer = kwargs.get(var_name, None)
+            if var_indexer is None:
+                if _mode == 'set':
                     raise ValueError(f"must specify var {var_name}")
-            elif _mode == 'get':
-                if var_name not in kwargs:
-                    kwargs[var_name] = slice(None, None, None)
-            if kwargs[var_name] is None:
-                raise ValueError(f"var {var_name} cannot be None")
-        key = tuple([kwargs[var_name] for var_name in self.var_names])
-        return key
+                var_indexer = slice(None)  # full slice indexer in “get” mode
+            key.append(var_indexer)
+        return tuple(key)
 
     def serialize(self):
         return {
             "var_names": self.var_names,
-            "vals": self.vals,
-            "valshape": self.valshape
+            "config2outcome": self._config2outcome,
+            "outcome_shape": self.outcome_shape
         }
 
     @classmethod
     def deserialize(cls, data):
         try:
             obj = cls(data["var_names"])
-            obj.vals = data["vals"]
-            obj.valshape = data["valshape"]
+            obj._config2outcome = data["config2outcome"]
+            obj.outcome_shape = data["outcome_shape"]
         except KeyError as e:
             raise ValueError(f"Missing key in serialized data: {e}")
         return obj
