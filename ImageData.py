@@ -123,7 +123,7 @@ def preprocess(X, **kwargs):
     """
 
     if kwargs.get('grayscale', False):
-        X = reduce(X, 'N 3 h w -> N (h w)', 'mean')
+        X = reduce(X, 'N c h w -> N (h w)', 'mean')
     else:
         X = rearrange(X, 'N c h w -> N (c h w)')
 
