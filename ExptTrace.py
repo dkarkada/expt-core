@@ -32,7 +32,7 @@ class ExptTrace():
         if len(config) != len(self.var_names):
             raise ValueError(f"len config {len(config)} != num vars {len(self.var_names)}")
         # ensure config settings are of valid types
-        allowed_types = (int, float, str, tuple)
+        allowed_types = (int, float, str, tuple, np.integer, np.floating)
         if not all(isinstance(c, allowed_types) for c in config):
             raise ValueError(f"config {config} elements must be one of {allowed_types}")
         # ensure config doesn't already exist, then write measurement outcome
