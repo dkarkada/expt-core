@@ -6,6 +6,8 @@ def rcsetup():
     plt.rc("font", family='stixgeneral', size=12)
     plt.rc("axes", facecolor=(1, .99, .95), titlesize=12)
     plt.rc("mathtext", fontset='cm')
+    plt.rc("pdf", fonttype=42)  # TrueType
+    plt.rc("ps", fonttype=42)
 
 
 class Logger:
